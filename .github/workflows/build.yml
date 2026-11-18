@@ -1,0 +1,35 @@
+name: Build Yolo VST3 (Windows)
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: DSP engine tests (MSVC)
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /O2 /EHsc /std:c++17 /I. dsp_test.cpp /Fe:dsp_test.exe && dsp_test.exe
+      - name: Configure
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Check plugin exists
+        shell: pwsh
+        run: Get-ChildItem -Recurse build/Yolo_artefacts/Release/VST3/Yolo.vst3
+      - name: Validate with pluginval
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pv.zip
+          Expand-Archive pv.zip -DestinationPath pv
+          .\pv\pluginval.exe --strictness-level 5 --validate-in-process --validate "build/Yolo_artefacts/Release/VST3/Yolo.vst3"
+      - name: Package with installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item -Recurse -Force build/Yolo_artefacts/Release/VST3/Yolo.vst3 dist/Yolo.vst3
+          Set-Content -Path dist/Install-Yolo.bat -Value "@echo off`r`nnet session >nul 2>&1 || (echo Right-click this file and choose Run as administrator & pause & exit /b)`r`nxcopy /E /I /Y /Q `"%~dp0Yolo.vst3`" `"%CommonProgramFiles%\VST3\Yolo.vst3`"`r`necho Installed. Now rescan plugins in FL Studio.`r`npause"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Yolo-VST3-Windows
+          path: dist
